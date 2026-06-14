@@ -1,0 +1,86 @@
+{
+  "actualizado": "2026-06-14",
+  "nota": "Editar este archivo en GitHub para actualizar resultados. El HTML lee este JSON sin exponer APIs privadas.",
+  "resultados": [
+    {
+      "equipoA": "Mexico",
+      "equipoB": "South Africa",
+      "golesA": 2,
+      "golesB": 0,
+      "fuente": "FIFA",
+      "fecha": "2026-06-11"
+    },
+    {
+      "equipoA": "South Korea",
+      "equipoB": "Czechia",
+      "golesA": 2,
+      "golesB": 1,
+      "fuente": "FIFA",
+      "fecha": "2026-06-11"
+    },
+    {
+      "equipoA": "Canada",
+      "equipoB": "Bosnia",
+      "golesA": 1,
+      "golesB": 1,
+      "fuente": "FIFA",
+      "fecha": "2026-06-12"
+    },
+    {
+      "equipoA": "USA",
+      "equipoB": "Paraguay",
+      "golesA": 4,
+      "golesB": 1,
+      "fuente": "FIFA",
+      "fecha": "2026-06-12"
+    },
+    {
+      "equipoA": "Qatar",
+      "equipoB": "Switzerland",
+      "golesA": 1,
+      "golesB": 1,
+      "fuente": "FIFA",
+      "fecha": "2026-06-13"
+    },
+    {
+      "equipoA": "Brazil",
+      "equipoB": "Morocco",
+      "golesA": 1,
+      "golesB": 1,
+      "fuente": "FIFA",
+      "fecha": "2026-06-13"
+    },
+    {
+      "equipoA": "Haiti",
+      "equipoB": "Scotland",
+      "golesA": 0,
+      "golesB": 1,
+      "fuente": "FIFA",
+      "fecha": "2026-06-13"
+    },
+    {
+      "equipoA": "Australia",
+      "equipoB": "Turkey",
+      "golesA": 2,
+      "golesB": 0,
+      "fuente": "FIFA",
+      "fecha": "2026-06-14"
+    },
+    {
+      "equipoA": "Germany",
+      "equipoB": "Curacao",
+      "golesA": 7,
+      "golesB": 1,
+      "fuente": "Reuters/FIFA",
+      "fecha": "2026-06-14"
+    },
+    {
+      "equipoA": "Netherlands",
+      "equipoB": "Japan",
+      "golesA": 2,
+      "golesB": 2,
+      "fuente": "FIFA",
+      "fecha": "2026-06-14"
+    }
+  ]
+}
