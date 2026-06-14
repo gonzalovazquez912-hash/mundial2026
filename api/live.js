@@ -4,7 +4,7 @@ export default async function handler(req, res) {
       "https://v3.football.api-sports.io/fixtures?live=all",
       {
         headers: {
-          "x-apisports-key": "TU_API_KEY_REAL"
+          "x-apisports-key": process.env.API_FOOTBALL_KEY
         }
       }
     );
