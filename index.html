@@ -637,9 +637,9 @@ function formatKickoff(iso) {
 }
 
 function getMatchClock(p, real) {
-  if (real) {
-    if (["FT", "AET", "PEN"].includes(real.estado)) return {label:"Finalizado", cls:"final"};
-    if (real.estado === "HT") return {label:"Entretiempo", cls:"live"};
+  if(real) {
+  if (["FT", "AET", "PEN"].includes(real.estado)) final++;
+  else live++;
 
     const extra = real.extra ? `+${real.extra}` : "";
     const minuto = real.minuto ? `${real.minuto}${extra}'` : "En vivo";
