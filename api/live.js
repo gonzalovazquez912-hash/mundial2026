@@ -1,8 +1,12 @@
 export default async function handler(req, res) {
   try {
-    const key =
-      process.env.API_FUBOL_KEY ||
-      process.env.API_FOOTBALL_KEY;
+    const key = process.env.API_FUTBOL_KEY;
+
+    if (!key) {
+      return res.status(500).json({
+        error: "No se encontró API_FUTBOL_KEY"
+      });
+    }
 
     const response = await fetch(
       "https://v3.football.api-sports.io/fixtures?live=all",
@@ -15,10 +19,10 @@ export default async function handler(req, res) {
 
     const data = await response.json();
 
-    res.status(200).json(data);
+    return res.status(200).json(data);
 
   } catch (error) {
-    res.status(500).json({
+    return res.status(500).json({
       error: error.message
     });
   }
