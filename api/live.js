@@ -19,7 +19,35 @@ export default async function handler(req, res) {
 
     const data = await response.json();
 
-    return res.status(200).json(data);
+    const mundial = (data.response || []).filter(
+      m => m.league?.name === "World Cup" && m.league?.season === 2026
+    );
+
+    const enriquecido = await Promise.all(
+      mundial.map(async (m) => {
+        const statsResponse = await fetch(
+          `https://v3.football.api-sports.io/fixtures/statistics?fixture=${m.fixture.id}`,
+          {
+            headers: {
+              "x-apisports-key": key
+            }
+          }
+        );
+
+        const statsData = await statsResponse.json();
+
+        return {
+          ...m,
+          statistics: statsData.response || []
+        };
+      })
+    );
+
+    return res.status(200).json({
+      errors: [],
+      results: enriquecido.length,
+      response: enriquecido
+    });
 
   } catch (error) {
     return res.status(500).json({
