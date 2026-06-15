@@ -1,109 +1,137 @@
-let cache = {
-  timestamp: 0,
-  data: null
-};
+const manualResults = [
+  ["Mexico", "South Africa", 2, 0],
+  ["South Korea", "Czechia", 2, 1],
+  ["Canada", "Bosnia", 1, 1],
+  ["USA", "Paraguay", 4, 1],
+  ["Qatar", "Switzerland", 1, 1],
+  ["Brazil", "Morocco", 1, 1],
+  ["Haiti", "Scotland", 0, 1],
+  ["Australia", "Turkey", 2, 0],
+  ["Germany", "Curacao", 7, 1],
+  ["Netherlands", "Japan", 2, 2],
+  ["Ivory Coast", "Ecuador", 1, 0],
+  ["Sweden", "Tunisia", 5, 1]
+];
+
+function crearPartidoManual([home, away, gh, ga], index) {
+  return {
+    fixture: {
+      id: 900000 + index,
+      status: {
+        long: "Match Finished",
+        short: "FT",
+        elapsed: 90,
+        extra: null
+      }
+    },
+    league: {
+      id: 1,
+      name: "World Cup",
+      country: "World",
+      season: 2026,
+      round: "Group Stage"
+    },
+    teams: {
+      home: {
+        id: 100000 + index,
+        name: home,
+        winner: gh > ga
+      },
+      away: {
+        id: 200000 + index,
+        name: away,
+        winner: ga > gh
+      }
+    },
+    goals: {
+      home: gh,
+      away: ga
+    },
+    score: {
+      halftime: {
+        home: null,
+        away: null
+      },
+      fulltime: {
+        home: gh,
+        away: ga
+      },
+      extratime: {
+        home: null,
+        away: null
+      },
+      penalty: {
+        home: null,
+        away: null
+      }
+    },
+    events: [],
+    statistics: []
+  };
+}
 
 export default async function handler(req, res) {
   try {
-    const ahora = Date.now();
-
-    // Cache de 90 segundos
-    if (cache.data && ahora - cache.timestamp < 90000) {
-      return res.status(200).json({
-        ...cache.data,
-        cache: true,
-        cache_seconds: Math.round((ahora - cache.timestamp) / 1000)
-      });
-    }
-
     const key = process.env.API_FUTBOL_KEY;
 
+    const manual = manualResults.map(crearPartidoManual);
+
     if (!key) {
-      return res.status(500).json({
-        error: "No se encontró API_FUTBOL_KEY"
+      return res.status(200).json({
+        errors: [],
+        results: manual.length,
+        response: manual,
+        fuente: "manual"
       });
     }
 
-    const headers = {
-      "x-apisports-key": key
-    };
+    let live = [];
 
-    const liveResp = await fetch(
-      "https://v3.football.api-sports.io/fixtures?live=all",
-      { headers }
-    );
+    try {
+      const liveResp = await fetch(
+        "https://v3.football.api-sports.io/fixtures?live=all",
+        {
+          headers: {
+            "x-apisports-key": key
+          }
+        }
+      );
 
-    const liveData = await liveResp.json();
+      const liveData = await liveResp.json();
 
-    if (liveData.message === "Too many requests") {
-      if (cache.data) {
-        return res.status(200).json({
-          ...cache.data,
-          cache: true,
-          warning: "Too many requests. Mostrando último cache disponible."
-        });
+      if (
+        !liveData.errors?.requests &&
+        liveData.message !== "Too many requests"
+      ) {
+        live = (liveData.response || []).filter(
+          m => m.league?.id === 1 && m.league?.season === 2026
+        );
       }
 
-      return res.status(429).json({
-        error: "Too many requests y no hay cache disponible"
-      });
+    } catch (e) {
+      live = [];
     }
 
-    if (liveData.errors && Object.keys(liveData.errors).length > 0) {
-      return res.status(200).json(liveData);
-    }
+    const mapa = new Map();
 
-    const mundial = (liveData.response || []).filter(
-      m => m.league?.id === 1 && m.league?.season === 2026
-    );
+    manual.forEach(m => {
+      mapa.set(`${m.teams.home.name}-${m.teams.away.name}`, m);
+    });
 
-    const enriquecidos = await Promise.all(
-      mundial.map(async (m) => {
-        try {
-          const statsResp = await fetch(
-            `https://v3.football.api-sports.io/fixtures/statistics?fixture=${m.fixture.id}`,
-            { headers }
-          );
+    live.forEach(m => {
+      mapa.set(`${m.teams.home.name}-${m.teams.away.name}`, m);
+    });
 
-          const statsData = await statsResp.json();
+    const response = Array.from(mapa.values());
 
-          return {
-            ...m,
-            statistics: statsData.response || []
-          };
-
-        } catch {
-          return {
-            ...m,
-            statistics: []
-          };
-        }
-      })
-    );
-
-    const respuesta = {
+    return res.status(200).json({
       errors: [],
-      results: enriquecidos.length,
-      response: enriquecidos,
-      cache: false
-    };
-
-    cache = {
-      timestamp: ahora,
-      data: respuesta
-    };
-
-    return res.status(200).json(respuesta);
+      results: response.length,
+      response,
+      fuente: live.length ? "manual + live" : "manual"
+    });
 
   } catch (error) {
-    if (cache.data) {
-      return res.status(200).json({
-        ...cache.data,
-        cache: true,
-        warning: "Error de API. Mostrando cache."
-      });
-    }
-
     return res.status(500).json({
       error: error.message
     });
