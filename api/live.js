@@ -8,45 +8,40 @@ export default async function handler(req, res) {
       });
     }
 
-    const response = await fetch(
+    const headers = { "x-apisports-key": key };
+
+    const liveResp = await fetch(
       "https://v3.football.api-sports.io/fixtures?live=all",
-      {
-        headers: {
-          "x-apisports-key": key
-        }
+      { headers }
+    );
+
+    const todayResp = await fetch(
+      "https://v3.football.api-sports.io/fixtures?league=1&season=2026&date=2026-06-14",
+      { headers }
+    );
+
+    const liveData = await liveResp.json();
+    const todayData = await todayResp.json();
+
+    const unidos = [
+      ...(liveData.response || []),
+      ...(todayData.response || [])
+    ];
+
+    const mapa = new Map();
+
+    unidos.forEach(m => {
+      if (m.league?.name === "World Cup" && m.league?.season === 2026) {
+        mapa.set(m.fixture.id, m);
       }
-    );
+    });
 
-    const data = await response.json();
-
-    const mundial = (data.response || []).filter(
-      m => m.league?.name === "World Cup" && m.league?.season === 2026
-    );
-
-    const enriquecido = await Promise.all(
-      mundial.map(async (m) => {
-        const statsResponse = await fetch(
-          `https://v3.football.api-sports.io/fixtures/statistics?fixture=${m.fixture.id}`,
-          {
-            headers: {
-              "x-apisports-key": key
-            }
-          }
-        );
-
-        const statsData = await statsResponse.json();
-
-        return {
-          ...m,
-          statistics: statsData.response || []
-        };
-      })
-    );
+    const partidos = Array.from(mapa.values());
 
     return res.status(200).json({
       errors: [],
-      results: enriquecido.length,
-      response: enriquecido
+      results: partidos.length,
+      response: partidos
     });
 
   } catch (error) {
