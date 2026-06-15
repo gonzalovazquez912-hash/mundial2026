@@ -12,36 +12,19 @@ export default async function handler(req, res) {
       "x-apisports-key": key
     };
 
-    const fixturesResp = await fetch(
-      "https://v3.football.api-sports.io/fixtures?league=1&season=2026",
+    const liveResp = await fetch(
+      "https://v3.football.api-sports.io/fixtures?live=all",
       { headers }
     );
 
-    const fixturesData = await fixturesResp.json();
+    const liveData = await liveResp.json();
 
-    if (fixturesData.errors && Object.keys(fixturesData.errors).length > 0) {
-      return res.status(200).json(fixturesData);
-    }
-
-    const mundial = (fixturesData.response || []).filter(
+    const mundial = (liveData.response || []).filter(
       m => m.league?.id === 1 && m.league?.season === 2026
     );
 
-    const partidosConStats = await Promise.all(
+    const enriquecidos = await Promise.all(
       mundial.map(async (m) => {
-        const estado = m.fixture?.status?.short;
-
-        const yaEmpezo = [
-          "1H", "HT", "2H", "ET", "BT", "P", "SUSP", "INT", "FT", "AET", "PEN"
-        ].includes(estado);
-
-        if (!yaEmpezo) {
-          return {
-            ...m,
-            statistics: []
-          };
-        }
-
         try {
           const statsResp = await fetch(
             `https://v3.football.api-sports.io/fixtures/statistics?fixture=${m.fixture.id}`,
@@ -55,7 +38,7 @@ export default async function handler(req, res) {
             statistics: statsData.response || []
           };
 
-        } catch (e) {
+        } catch {
           return {
             ...m,
             statistics: []
@@ -66,8 +49,8 @@ export default async function handler(req, res) {
 
     return res.status(200).json({
       errors: [],
-      results: partidosConStats.length,
-      response: partidosConStats
+      results: enriquecidos.length,
+      response: enriquecidos
     });
 
   } catch (error) {
