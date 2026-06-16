@@ -1,9 +1,9 @@
 // api/live.js
-// Fuente principal gratis: TheSportsDB
-// - Extrae automáticamente IDs de partidos desde la página de temporada.
-// - Solo devuelve partidos finalizados con resultado.
-// - Intenta extraer estadísticas desde la página del evento.
-// - API-Football queda solo como extra para partidos en vivo si hay cuota.
+// Versión segura:
+// - TheSportsDB: resultados reales finalizados.
+// - API-Football: solo partidos en vivo si hay cuota.
+// - Estadísticas: SOLO si vienen desde API estructurada.
+// - No scrapea estadísticas desde HTML para evitar datos falsos.
 
 const SPORTSDB_SEASON_URL =
   "https://www.thesportsdb.com/season/4429-fifa-world-cup/2026";
@@ -58,125 +58,6 @@ function extraerEventIds(html) {
   return Array.from(ids);
 }
 
-function limpiarTextoHtml(html) {
-  return html
-    .replace(/<script[\s\S]*?<\/script>/gi, "")
-    .replace(/<style[\s\S]*?<\/style>/gi, "")
-    .replace(/<[^>]+>/g, "\n")
-    .replace(/&nbsp;/g, " ")
-    .replace(/&amp;/g, "&")
-    .replace(/&#039;/g, "'")
-    .replace(/&quot;/g, '"')
-    .split("\n")
-    .map(x => x.trim())
-    .filter(Boolean);
-}
-
-function parsearNumero(valor) {
-  if (valor === null || valor === undefined) return null;
-
-  const limpio = String(valor)
-    .replace("%", "")
-    .replace(",", ".")
-    .trim();
-
-  const n = Number(limpio);
-
-  if (Number.isNaN(n)) return valor;
-
-  if (String(valor).includes("%")) return `${n}%`;
-
-  return n;
-}
-
-function buscarValorAnterior(tokens, index) {
-  for (let i = index - 1; i >= 0; i--) {
-    if (/^-?\d+(\.\d+)?%?$/.test(tokens[i])) {
-      return parsearNumero(tokens[i]);
-    }
-  }
-
-  return null;
-}
-
-function buscarValorPosterior(tokens, index) {
-  for (let i = index + 1; i < tokens.length; i++) {
-    if (/^-?\d+(\.\d+)?%?$/.test(tokens[i])) {
-      return parsearNumero(tokens[i]);
-    }
-  }
-
-  return null;
-}
-
-function extraerStatsDesdePaginaEvento(html, home, away) {
-  const tokens = limpiarTextoHtml(html);
-
-  const labels = {
-    "SHOTS ON GOAL": "Shots on Goal",
-    "SHOTS OFF GOAL": "Shots off Goal",
-    "TOTAL SHOTS": "Total Shots",
-    "BLOCKED SHOTS": "Blocked Shots",
-    "SHOTS INSIDEBOX": "Shots insidebox",
-    "SHOTS OUTSIDEBOX": "Shots outsidebox",
-    "FOULS": "Fouls",
-    "CORNER KICKS": "Corner Kicks",
-    "OFFSIDES": "Offsides",
-    "OFF SIDES": "Offsides",
-    "BALL POSSESSION": "Ball Possession",
-    "YELLOW CARDS": "Yellow Cards",
-    "RED CARDS": "Red Cards",
-    "GOALKEEPER SAVES": "Goalkeeper Saves",
-    "TOTAL PASSES": "Total passes",
-    "PASSES ACCURATE": "Passes accurate",
-    "PASSES %": "Passes %",
-    "EXPECTED_GOALS": "expected_goals",
-    "EXPECTED GOALS": "expected_goals",
-    "GOALS_PREVENTED": "goals_prevented"
-  };
-
-  const homeStats = [];
-  const awayStats = [];
-
-  Object.entries(labels).forEach(([labelOriginal, labelFinal]) => {
-    const idx = tokens.findIndex(
-      t => t.toUpperCase() === labelOriginal
-    );
-
-    if (idx === -1) return;
-
-    const homeValue = buscarValorAnterior(tokens, idx);
-    const awayValue = buscarValorPosterior(tokens, idx);
-
-    homeStats.push({
-      type: labelFinal,
-      value: homeValue
-    });
-
-    awayStats.push({
-      type: labelFinal,
-      value: awayValue
-    });
-  });
-
-  if (!homeStats.length) return [];
-
-  return [
-    {
-      team: {
-        name: home
-      },
-      statistics: homeStats
-    },
-    {
-      team: {
-        name: away
-      },
-      statistics: awayStats
-    }
-  ];
-}
-
 async function obtenerStatsPorAPI(id, home, away) {
   try {
     const statsResp = await fetch(
@@ -199,13 +80,46 @@ async function obtenerStatsPorAPI(id, home, away) {
     const homeStats = [];
     const awayStats = [];
 
+    const tiposPermitidos = {
+      "SHOTS ON GOAL": "Shots on Goal",
+      "SHOTS OFF GOAL": "Shots off Goal",
+      "TOTAL SHOTS": "Total Shots",
+      "BLOCKED SHOTS": "Blocked Shots",
+      "SHOTS INSIDEBOX": "Shots insidebox",
+      "SHOTS OUTSIDEBOX": "Shots outsidebox",
+      "FOULS": "Fouls",
+      "CORNER KICKS": "Corner Kicks",
+      "OFFSIDES": "Offsides",
+      "OFF SIDES": "Offsides",
+      "BALL POSSESSION": "Ball Possession",
+      "YELLOW CARDS": "Yellow Cards",
+      "RED CARDS": "Red Cards",
+      "GOALKEEPER SAVES": "Goalkeeper Saves",
+      "TOTAL PASSES": "Total passes",
+      "PASSES ACCURATE": "Passes accurate",
+      "PASSES %": "Passes %",
+      "EXPECTED_GOALS": "expected_goals",
+      "EXPECTED GOALS": "expected_goals",
+      "GOALS_PREVENTED": "goals_prevented"
+    };
+
     posibles.forEach(s => {
-      const tipo =
+      const tipoRaw =
         s.strStat ||
         s.strStatistic ||
         s.strMeasure ||
         s.type ||
         s.name;
+
+      if (!tipoRaw) return;
+
+      const tipoKey = String(tipoRaw)
+        .toUpperCase()
+        .trim();
+
+      const tipoFinal = tiposPermitidos[tipoKey];
+
+      if (!tipoFinal) return;
 
       const homeVal =
         s.intHome ??
@@ -223,20 +137,22 @@ async function obtenerStatsPorAPI(id, home, away) {
         s.valueAway ??
         null;
 
-      if (!tipo) return;
+      if (homeVal === null || awayVal === null) return;
 
       homeStats.push({
-        type: tipo,
+        type: tipoFinal,
         value: homeVal
       });
 
       awayStats.push({
-        type: tipo,
+        type: tipoFinal,
         value: awayVal
       });
     });
 
-    if (!homeStats.length) return [];
+    if (!homeStats.length) {
+      return [];
+    }
 
     return [
       {
@@ -259,131 +175,126 @@ async function obtenerStatsPorAPI(id, home, away) {
 }
 
 async function obtenerStatsEvento(id, home, away) {
-  let statistics = await obtenerStatsPorAPI(id, home, away);
+  // IMPORTANTE:
+  // No scrapeamos estadísticas desde HTML porque puede tomar números incorrectos.
+  // Solo aceptamos datos si vienen desde API estructurada.
+  const statistics = await obtenerStatsPorAPI(id, home, away);
 
-  if (statistics.length) {
-    return statistics;
+  if (!statistics.length) {
+    return [];
   }
 
+  return statistics;
+}
+
+async function obtenerEventoSportsDB(id) {
   try {
-    const pageResp = await fetch(
-      `https://www.thesportsdb.com/event/${id}`
+    const eventResp = await fetch(
+      `https://www.thesportsdb.com/api/v1/json/3/lookupevent.php?id=${id}`
     );
 
-    const pageHtml = await pageResp.text();
+    const eventData = await eventResp.json();
 
-    statistics = extraerStatsDesdePaginaEvento(
-      pageHtml,
+    const evento = eventData?.events?.[0];
+
+    if (!evento) return null;
+
+    const home = normalizarNombre(evento.strHomeTeam);
+    const away = normalizarNombre(evento.strAwayTeam);
+
+    const homeScore =
+      evento.intHomeScore !== null &&
+      evento.intHomeScore !== undefined &&
+      evento.intHomeScore !== ""
+        ? Number(evento.intHomeScore)
+        : null;
+
+    const awayScore =
+      evento.intAwayScore !== null &&
+      evento.intAwayScore !== undefined &&
+      evento.intAwayScore !== ""
+        ? Number(evento.intAwayScore)
+        : null;
+
+    // CLAVE:
+    // Si no tiene resultado, no lo devolvemos.
+    // Así los partidos futuros no aparecen como "en vivo".
+    if (homeScore === null || awayScore === null) {
+      return null;
+    }
+
+    const statistics = await obtenerStatsEvento(
+      id,
       home,
       away
     );
 
-    return statistics;
-
-  } catch {
-    return [];
-  }
-}
-
-async function obtenerEventoSportsDB(id) {
-  const eventResp = await fetch(
-    `https://www.thesportsdb.com/api/v1/json/3/lookupevent.php?id=${id}`
-  );
-
-  const eventData = await eventResp.json();
-
-  const evento = eventData?.events?.[0];
-
-  if (!evento) return null;
-
-  const home = normalizarNombre(evento.strHomeTeam);
-  const away = normalizarNombre(evento.strAwayTeam);
-
-  const homeScore =
-    evento.intHomeScore !== null &&
-    evento.intHomeScore !== undefined &&
-    evento.intHomeScore !== ""
-      ? Number(evento.intHomeScore)
-      : null;
-
-  const awayScore =
-    evento.intAwayScore !== null &&
-    evento.intAwayScore !== undefined &&
-    evento.intAwayScore !== ""
-      ? Number(evento.intAwayScore)
-      : null;
-
-  // CLAVE:
-  // Si no tiene resultado, no se devuelve.
-  // Así los partidos futuros no aparecen como "en vivo".
-  if (homeScore === null || awayScore === null) {
-    return null;
-  }
-
-  const statistics = await obtenerStatsEvento(
-    id,
-    home,
-    away
-  );
-
-  return {
-    fixture: {
-      id: Number(id),
-      date: evento.dateEvent,
-      status: {
-        long: "Match Finished",
-        short: "FT",
-        elapsed: 90,
-        extra: null
-      }
-    },
-    league: {
-      id: 1,
-      name: "World Cup",
-      country: "World",
-      season: 2026,
-      round: evento.intRound
-        ? `Round ${evento.intRound}`
-        : "Group Stage"
-    },
-    teams: {
-      home: {
-        id: evento.idHomeTeam ? Number(evento.idHomeTeam) : null,
-        name: home,
-        winner: homeScore > awayScore
+    return {
+      fixture: {
+        id: Number(id),
+        date: evento.dateEvent,
+        status: {
+          long: "Match Finished",
+          short: "FT",
+          elapsed: 90,
+          extra: null
+        }
       },
-      away: {
-        id: evento.idAwayTeam ? Number(evento.idAwayTeam) : null,
-        name: away,
-        winner: awayScore > homeScore
-      }
-    },
-    goals: {
-      home: homeScore,
-      away: awayScore
-    },
-    score: {
-      halftime: {
-        home: null,
-        away: null
+      league: {
+        id: 1,
+        name: "World Cup",
+        country: "World",
+        season: 2026,
+        round: evento.intRound
+          ? `Round ${evento.intRound}`
+          : "Group Stage"
       },
-      fulltime: {
+      teams: {
+        home: {
+          id: evento.idHomeTeam
+            ? Number(evento.idHomeTeam)
+            : null,
+          name: home,
+          winner: homeScore > awayScore
+        },
+        away: {
+          id: evento.idAwayTeam
+            ? Number(evento.idAwayTeam)
+            : null,
+          name: away,
+          winner: awayScore > homeScore
+        }
+      },
+      goals: {
         home: homeScore,
         away: awayScore
       },
-      extratime: {
-        home: null,
-        away: null
+      score: {
+        halftime: {
+          home: null,
+          away: null
+        },
+        fulltime: {
+          home: homeScore,
+          away: awayScore
+        },
+        extratime: {
+          home: null,
+          away: null
+        },
+        penalty: {
+          home: null,
+          away: null
+        }
       },
-      penalty: {
-        home: null,
-        away: null
-      }
-    },
-    events: [],
-    statistics,
-    source: "TheSportsDB"
-  };
+      events: [],
+      statistics,
+      source: "TheSportsDB"
+    };
+
+  } catch {
+    return null;
+  }
 }
 
 function normalizarFixtureAPIFootball(m) {
