@@ -1,6 +1,14 @@
 // api/live.js
 // Devuelve resultados del Mundial 2026: combina resultados manuales (respaldo)
 // con datos en vivo de API-Football cuando hay API key configurada.
+//
+// OPTIMIZADO PARA EL PLAN FREE (100 req/día, 10 req/min):
+// - Una sola llamada a la API por sync (antes eran 2: live + today).
+//   "fixtures?date=hoy" ya incluye partidos en vivo Y finalizados de hoy,
+//   así que no hace falta pedir "live=all" por separado.
+// - Caché en memoria de 5 minutos: si varias personas visitan la página
+//   casi al mismo tiempo, o si Vercel arranca varias instancias de la
+//   función, no se gasta una request de la API por cada una.
 
 const NOMBRE_MAP = {
   "Côte d'Ivoire": "Ivory Coast",
@@ -76,11 +84,17 @@ function normalizarFixtureAPI(m) {
   };
 }
 
+// Caché en memoria del proceso. Vercel reutiliza la misma instancia de
+// función entre invocaciones cercanas en el tiempo (mientras no esté "fría"),
+// así que esto evita pegarle a la API de nuevo si alguien refrescó la
+// página hace 30 segundos. No es un caché persistente entre cold starts,
+// pero ayuda mucho a no quemar cuota en ráfagas de tráfico.
+let cache = { data: null, timestamp: 0 };
+const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutos
+
 export default async function handler(req, res) {
   // CORS: el frontend vive en GitHub Pages (otro dominio), así que sin estos
   // headers el navegador bloquea la respuesta antes de que el JS la vea.
-  // Esto era la causa de "no aparece el resultado real": la petición SÍ
-  // llegaba al endpoint, pero el browser descartaba la respuesta por CORS.
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type");
@@ -102,28 +116,35 @@ export default async function handler(req, res) {
       });
     }
 
+    const ahora = Date.now();
+    if (cache.data && ahora - cache.timestamp < CACHE_TTL_MS) {
+      return res.status(200).json({ ...cache.data, fuente: cache.data.fuente + " (cache)" });
+    }
+
     let live = [];
     let liveError = null;
 
     try {
-      const liveResp = await fetch(
-        "https://v3.football.api-sports.io/fixtures?live=all",
+      // Una sola llamada: fixtures del día de hoy ya trae partidos en vivo
+      // Y finalizados, con sus estadísticas completas una vez que terminan.
+      const hoy = new Date().toISOString().slice(0, 10);
+
+      const resp = await fetch(
+        `https://v3.football.api-sports.io/fixtures?league=1&season=2026&date=${hoy}`,
         { headers: { "x-apisports-key": key } }
       );
 
-      if (!liveResp.ok) {
-        throw new Error(`API-Football respondió ${liveResp.status}`);
+      if (!resp.ok) {
+        throw new Error(`API-Football respondió ${resp.status}`);
       }
 
-      const liveData = await liveResp.json();
+      const data = await resp.json();
 
-      if (liveData.errors?.requests || liveData.message === "Too many requests") {
+      if (data.errors?.requests || data.message === "Too many requests") {
         liveError = "Rate limit alcanzado en API-Football";
       } else {
-        live = (liveData.response || [])
+        live = (data.response || [])
           .map(normalizarFixtureAPI)
-          // ID 1 = World Cup en API-Football, pero validamos también que la
-          // season coincida como número para evitar falsos negativos por tipo.
           .filter((m) => m.league?.id === 1 && m.league?.season === 2026);
       }
     } catch (e) {
@@ -138,12 +159,20 @@ export default async function handler(req, res) {
 
     const response = Array.from(mapa.values());
 
-    return res.status(200).json({
+    const payload = {
       errors: liveError ? [liveError] : [],
       results: response.length,
       response,
       fuente: live.length ? "manual + live" : "manual",
-    });
+    };
+
+    // Solo cacheamos si NO hubo rate limit, para no quedarnos pegados
+    // mostrando el error durante 5 minutos si la API se recupera antes.
+    if (!liveError) {
+      cache = { data: payload, timestamp: ahora };
+    }
+
+    return res.status(200).json(payload);
   } catch (error) {
     return res.status(500).json({ error: error.message });
   }
