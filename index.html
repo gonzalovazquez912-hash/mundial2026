@@ -664,23 +664,65 @@ function renderClasificados() {
   const box = document.getElementById("clasificadosBox");
   const tercerosBox = document.getElementById("tercerosBox");
   const llavesBox = document.getElementById("llavesBox");
+
   if (!box || !tercerosBox || !llavesBox) return;
 
   const tablas = calcularTablasGrupos();
   const terceros = mejoresTerceros(tablas);
   const mejores8 = terceros.slice(0, 8).map(t => t.equipo);
 
-  box.innerHTML = `<div class="groups-grid">${Object.entries(tablas).sort().map(([grupo, tabla]) => `
-    <div class="group-card">
-      <div class="group-title">Grupo ${grupo}</div>
-      <div class="table-row table-head"><div>#</div><div>Equipo</div><div>PJ</div><div>DG</div><div>GF</div><div>PTS</div></div>
-      ${tabla.map((t, i) => `<div class="table-row ${i < 2 ? "qualifies" : mejores8.includes(t.equipo) && i === 2 ? "third-ok" : ""}"><div>${i + 1}</div><<div>${t.equipo} · G${t.grupo}</div>div>${t.equipo}</div><div>${t.pj}</div><div>${t.dg}</div><div>${t.gf}</div><div>${t.pts}</div></div>`).join("")}
-    </div>`).join("")}</div>`;
+  box.innerHTML = `
+    <div class="groups-grid">
+      ${Object.entries(tablas).sort().map(([grupo, tabla]) => `
+        <div class="group-card">
+          <div class="group-title">Grupo ${grupo}</div>
 
-  tercerosBox.innerHTML = `<div style="margin-top:16px" class="third-card">
-    <div class="group-title">Mejores terceros</div>
-    ${terceros.map((t, i) => `<div class="table-row ${i < 8 ? "third-ok" : "third-out"}"><div>${i + 1}</div><div>${t.equipo} · G${t.grupo}</div><div>${t.pj}</div><div>${t.dg}</div><div>${t.gf}</div><div>${t.pts}</div></div>`).join("")}
-  </div>`;
+          <div class="table-row table-head">
+            <div>#</div>
+            <div class="country-name">Equipo</div>
+            <div>PJ</div>
+            <div>DG</div>
+            <div>GF</div>
+            <div>PTS</div>
+          </div>
+
+          ${tabla.map((t, i) => `
+            <div class="table-row ${
+              i < 2
+                ? "qualifies"
+                : mejores8.includes(t.equipo) && i === 2
+                  ? "third-ok"
+                  : ""
+            }">
+              <div>${i + 1}</div>
+              <div class="country-name">${t.equipo}</div>
+              <div>${t.pj}</div>
+              <div>${t.dg}</div>
+              <div>${t.gf}</div>
+              <div>${t.pts}</div>
+            </div>
+          `).join("")}
+        </div>
+      `).join("")}
+    </div>
+  `;
+
+  tercerosBox.innerHTML = `
+    <div style="margin-top:16px" class="third-card">
+      <div class="group-title">Mejores terceros</div>
+
+      ${terceros.map((t, i) => `
+        <div class="table-row ${i < 8 ? "third-ok" : "third-out"}">
+          <div>${i + 1}</div>
+          <div class="country-name">${t.equipo} · Grupo ${t.grupo}</div>
+          <div>${t.pj}</div>
+          <div>${t.dg}</div>
+          <div>${t.gf}</div>
+          <div>${t.pts}</div>
+        </div>
+      `).join("")}
+    </div>
+  `;
 
   renderLlavesProvisorias(tablas, terceros.slice(0, 8));
 }
