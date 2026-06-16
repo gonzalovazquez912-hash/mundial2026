@@ -77,6 +77,18 @@ function normalizarFixtureAPI(m) {
 }
 
 export default async function handler(req, res) {
+  // CORS: el frontend vive en GitHub Pages (otro dominio), así que sin estos
+  // headers el navegador bloquea la respuesta antes de que el JS la vea.
+  // Esto era la causa de "no aparece el resultado real": la petición SÍ
+  // llegaba al endpoint, pero el browser descartaba la respuesta por CORS.
+  res.setHeader("Access-Control-Allow-Origin", "*");
+  res.setHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+
+  if (req.method === "OPTIONS") {
+    return res.status(204).end();
+  }
+
   try {
     const key = process.env.API_FUTBOL_KEY;
     const manual = manualResults.map(crearPartidoManual);
