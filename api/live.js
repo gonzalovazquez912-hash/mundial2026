@@ -1,8 +1,12 @@
 // api/live.js
-// Versión estable gratis:
-// - Manual = resultados finalizados
-// - API-Football = solo partidos en vivo mientras haya cuota
-// - TheSportsDB / manualStats = estadísticas post partido agregadas a mano
+// Fuente principal gratis: TheSportsDB
+// - Extrae automáticamente IDs de partidos desde la página de temporada.
+// - Busca resultado de cada evento.
+// - Intenta traer estadísticas.
+// - API-Football queda solo como extra para partidos en vivo si hay cuota.
+
+const SPORTSDB_SEASON_URL =
+  "https://www.thesportsdb.com/season/4429-fifa-world-cup/2026";
 
 const NOMBRE_MAP = {
   "Côte d'Ivoire": "Ivory Coast",
@@ -14,6 +18,7 @@ const NOMBRE_MAP = {
   "USA": "USA",
   "Korea Republic": "South Korea",
   "South Korea": "South Korea",
+  "Bosnia-Herzegovina": "Bosnia",
   "Bosnia & Herzegovina": "Bosnia",
   "Bosnia and Herzegovina": "Bosnia",
   "Bosnia": "Bosnia",
@@ -27,159 +32,296 @@ function normalizarNombre(nombre) {
   return NOMBRE_MAP[nombre] || nombre;
 }
 
-const manualResults = [
-  ["Mexico", "South Africa", 2, 0],
-  ["South Korea", "Czechia", 2, 1],
-  ["Canada", "Bosnia", 1, 1],
-  ["USA", "Paraguay", 4, 1],
-  ["Qatar", "Switzerland", 1, 1],
-  ["Brazil", "Morocco", 1, 1],
-  ["Haiti", "Scotland", 0, 1],
-  ["Australia", "Turkey", 2, 0],
-  ["Germany", "Curacao", 7, 1],
-  ["Netherlands", "Japan", 2, 2],
-  ["Ivory Coast", "Ecuador", 1, 0],
-  ["Sweden", "Tunisia", 5, 1],
-];
-
-const manualStats = {
-  "Mexico-South Africa": {
-    home: "Mexico",
-    away: "South Africa",
-    stats: {
-      "Shots on Goal": [4, 2],
-      "Shots off Goal": [7, 1],
-      "Total Shots": [16, 3],
-      "Blocked Shots": [5, 0],
-      "Shots insidebox": [9, 1],
-      "Shots outsidebox": [7, 2],
-      "Fouls": [12, 11],
-      "Corner Kicks": [3, 1],
-      "Offsides": [1, 1],
-      "Ball Possession": ["61%", "39%"],
-      "Yellow Cards": [1, 2],
-      "Red Cards": [1, 2],
-      "Goalkeeper Saves": [2, 2],
-      "Total passes": [520, 335],
-      "Passes accurate": [467, 272],
-      "Passes %": ["90%", "81%"],
-      "expected_goals": ["1.41", "0.07"]
-    }
-  }
+let cache = {
+  data: null,
+  timestamp: 0,
 };
 
-function convertirStats(key) {
-  const data = manualStats[key];
+const CACHE_TTL_MS = 10 * 60 * 1000;
 
-  if (!data) return [];
+function extraerEventIds(html) {
+  const ids = new Set();
+
+  const regex = /\/event\/(\d+)-/g;
+  let match;
+
+  while ((match = regex.exec(html)) !== null) {
+    ids.add(match[1]);
+  }
+
+  return Array.from(ids);
+}
+
+function estadoAPIFootball(evento) {
+  const scoreHome = evento.intHomeScore;
+  const scoreAway = evento.intAwayScore;
+
+  const terminado =
+    scoreHome !== null &&
+    scoreHome !== undefined &&
+    scoreHome !== "" &&
+    scoreAway !== null &&
+    scoreAway !== undefined &&
+    scoreAway !== "";
+
+  if (terminado) {
+    return {
+      long: "Match Finished",
+      short: "FT",
+      elapsed: 90,
+      extra: null,
+    };
+  }
+
+  return {
+    long: "Not Started",
+    short: "NS",
+    elapsed: null,
+    extra: null,
+  };
+}
+
+function convertirStatsSportsDB(statsData, home, away) {
+  const posibles =
+    statsData?.eventstats ||
+    statsData?.event_stats ||
+    statsData?.stats ||
+    statsData?.statistics ||
+    [];
+
+  if (!Array.isArray(posibles) || posibles.length === 0) {
+    return [];
+  }
+
+  const homeStats = [];
+  const awayStats = [];
+
+  posibles.forEach((s) => {
+    const tipo =
+      s.strStat ||
+      s.strStatistic ||
+      s.strMeasure ||
+      s.type ||
+      s.name;
+
+    const homeVal =
+      s.intHome ||
+      s.strHome ||
+      s.home ||
+      s.homeValue ||
+      s.valueHome;
+
+    const awayVal =
+      s.intAway ||
+      s.strAway ||
+      s.away ||
+      s.awayValue ||
+      s.valueAway;
+
+    if (!tipo) return;
+
+    const mapTipos = {
+      "SHOTS ON GOAL": "Shots on Goal",
+      "SHOTS OFF GOAL": "Shots off Goal",
+      "TOTAL SHOTS": "Total Shots",
+      "BLOCKED SHOTS": "Blocked Shots",
+      "SHOTS INSIDEBOX": "Shots insidebox",
+      "SHOTS OUTSIDEBOX": "Shots outsidebox",
+      "FOULS": "Fouls",
+      "CORNER KICKS": "Corner Kicks",
+      "OFF SIDES": "Offsides",
+      "OFFSIDES": "Offsides",
+      "BALL POSSESSION": "Ball Possession",
+      "YELLOW CARDS": "Yellow Cards",
+      "RED CARDS": "Red Cards",
+      "GOALKEEPER SAVES": "Goalkeeper Saves",
+      "TOTAL PASSES": "Total passes",
+      "PASSES ACCURATE": "Passes accurate",
+      "PASSES %": "Passes %",
+      "EXPECTED_GOALS": "expected_goals",
+      "EXPECTED GOALS": "expected_goals",
+      "GOALS_PREVENTED": "goals_prevented",
+    };
+
+    const tipoFinal = mapTipos[String(tipo).toUpperCase()] || tipo;
+
+    homeStats.push({
+      type: tipoFinal,
+      value: homeVal ?? null,
+    });
+
+    awayStats.push({
+      type: tipoFinal,
+      value: awayVal ?? null,
+    });
+  });
 
   return [
     {
       team: {
-        name: data.home
+        name: home,
       },
-      statistics: Object.entries(data.stats).map(([type, values]) => ({
-        type,
-        value: values[0]
-      }))
+      statistics: homeStats,
     },
     {
       team: {
-        name: data.away
+        name: away,
       },
-      statistics: Object.entries(data.stats).map(([type, values]) => ({
-        type,
-        value: values[1]
-      }))
-    }
+      statistics: awayStats,
+    },
   ];
 }
 
-function crearPartidoManual([home, away, gh, ga], index) {
-  const key = `${home}-${away}`;
+async function obtenerEventoSportsDB(id) {
+  const eventResp = await fetch(
+    `https://www.thesportsdb.com/api/v1/json/3/lookupevent.php?id=${id}`
+  );
+
+  const eventData = await eventResp.json();
+
+  const evento = eventData?.events?.[0];
+
+  if (!evento) return null;
+
+  const home = normalizarNombre(evento.strHomeTeam);
+  const away = normalizarNombre(evento.strAwayTeam);
+
+  let statistics = [];
+
+  try {
+    const statsResp = await fetch(
+      `https://www.thesportsdb.com/api/v2/json/lookup/event_stats/${id}`
+    );
+
+    const statsData = await statsResp.json();
+
+    statistics = convertirStatsSportsDB(statsData, home, away);
+  } catch {
+    statistics = [];
+  }
+
+  const homeScore =
+    evento.intHomeScore !== null &&
+    evento.intHomeScore !== undefined &&
+    evento.intHomeScore !== ""
+      ? Number(evento.intHomeScore)
+      : null;
+
+  const awayScore =
+    evento.intAwayScore !== null &&
+    evento.intAwayScore !== undefined &&
+    evento.intAwayScore !== ""
+      ? Number(evento.intAwayScore)
+      : null;
 
   return {
     fixture: {
-      id: 900000 + index,
-      status: {
-        long: "Match Finished",
-        short: "FT",
-        elapsed: 90,
-        extra: null
-      }
+      id: Number(id),
+      date: evento.dateEvent,
+      status: estadoAPIFootball(evento),
     },
     league: {
       id: 1,
       name: "World Cup",
       country: "World",
       season: 2026,
-      round: "Group Stage"
+      round: evento.intRound ? `Round ${evento.intRound}` : "Group Stage",
     },
     teams: {
       home: {
-        id: 100000 + index,
+        id: evento.idHomeTeam ? Number(evento.idHomeTeam) : null,
         name: home,
-        winner: gh > ga
+        winner:
+          homeScore !== null && awayScore !== null
+            ? homeScore > awayScore
+            : null,
       },
       away: {
-        id: 200000 + index,
+        id: evento.idAwayTeam ? Number(evento.idAwayTeam) : null,
         name: away,
-        winner: ga > gh
-      }
+        winner:
+          homeScore !== null && awayScore !== null
+            ? awayScore > homeScore
+            : null,
+      },
     },
     goals: {
-      home: gh,
-      away: ga
+      home: homeScore,
+      away: awayScore,
     },
     score: {
       halftime: {
         home: null,
-        away: null
+        away: null,
       },
       fulltime: {
-        home: gh,
-        away: ga
+        home: homeScore,
+        away: awayScore,
       },
       extratime: {
         home: null,
-        away: null
+        away: null,
       },
       penalty: {
         home: null,
-        away: null
-      }
+        away: null,
+      },
     },
     events: [],
-    statistics: convertirStats(key)
+    statistics,
+    source: "TheSportsDB",
   };
 }
 
-function normalizarFixtureAPI(m) {
+function normalizarFixtureAPIFootball(m) {
   return {
     ...m,
     league: {
       ...m.league,
-      season: Number(m.league?.season)
+      season: Number(m.league?.season),
     },
     teams: {
       home: {
         ...m.teams.home,
-        name: normalizarNombre(m.teams.home.name)
+        name: normalizarNombre(m.teams.home.name),
       },
       away: {
         ...m.teams.away,
-        name: normalizarNombre(m.teams.away.name)
-      }
-    }
+        name: normalizarNombre(m.teams.away.name),
+      },
+    },
+    source: "API-Football",
   };
 }
 
-let cache = {
-  data: null,
-  timestamp: 0
-};
+async function obtenerLiveAPIFootball() {
+  const key = process.env.API_FUTBOL_KEY;
 
-const CACHE_TTL_MS = 5 * 60 * 1000;
+  if (!key) return [];
+
+  try {
+    const resp = await fetch(
+      "https://v3.football.api-sports.io/fixtures?live=all",
+      {
+        headers: {
+          "x-apisports-key": key,
+        },
+      }
+    );
+
+    const data = await resp.json();
+
+    if (data.errors?.requests || data.message === "Too many requests") {
+      return [];
+    }
+
+    return (data.response || [])
+      .map(normalizarFixtureAPIFootball)
+      .filter((m) => m.league?.id === 1 && m.league?.season === 2026);
+  } catch {
+    return [];
+  }
+}
 
 export default async function handler(req, res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
@@ -191,80 +333,58 @@ export default async function handler(req, res) {
   }
 
   try {
-    const key = process.env.API_FUTBOL_KEY;
-    const manual = manualResults.map(crearPartidoManual);
-
     const ahora = Date.now();
 
     if (cache.data && ahora - cache.timestamp < CACHE_TTL_MS) {
       return res.status(200).json({
         ...cache.data,
-        fuente: cache.data.fuente + " cache"
+        cache: true,
       });
     }
 
-    let live = [];
-    let liveError = null;
+    const seasonResp = await fetch(SPORTSDB_SEASON_URL);
+    const html = await seasonResp.text();
 
-    if (key) {
-      try {
-        const resp = await fetch(
-          "https://v3.football.api-sports.io/fixtures?live=all",
-          {
-            headers: {
-              "x-apisports-key": key
-            }
-          }
-        );
+    const ids = extraerEventIds(html);
 
-        const data = await resp.json();
+    const eventos = await Promise.all(
+      ids.map((id) => obtenerEventoSportsDB(id))
+    );
 
-        if (data.errors?.requests || data.message === "Too many requests") {
-          liveError = "Rate limit alcanzado en API-Football";
-        } else {
-          live = (data.response || [])
-            .map(normalizarFixtureAPI)
-            .filter(
-              m => m.league?.id === 1 && m.league?.season === 2026
-            );
-        }
+    const sportsDB = eventos.filter(Boolean);
 
-      } catch (e) {
-        liveError = e.message;
-      }
-    }
+    const liveAPI = await obtenerLiveAPIFootball();
 
     const mapa = new Map();
 
-    manual.forEach(m => {
+    sportsDB.forEach((m) => {
       mapa.set(`${m.teams.home.name}-${m.teams.away.name}`, m);
     });
 
-    live.forEach(m => {
+    liveAPI.forEach((m) => {
       mapa.set(`${m.teams.home.name}-${m.teams.away.name}`, m);
     });
 
     const response = Array.from(mapa.values());
 
     const payload = {
-      errors: liveError ? [liveError] : [],
+      errors: [],
       results: response.length,
       response,
-      fuente: live.length ? "manual + live" : "manual"
+      fuente: liveAPI.length
+        ? "TheSportsDB + API-Football"
+        : "TheSportsDB",
     };
 
-    if (!liveError) {
-      cache = {
-        data: payload,
-        timestamp: ahora
-      };
-    }
+    cache = {
+      data: payload,
+      timestamp: ahora,
+    };
 
     return res.status(200).json(payload);
-
   } catch (error) {
     return res.status(500).json({
-      error: error.message
+      error: error.message,
     });
   }
 }
