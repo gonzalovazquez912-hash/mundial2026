@@ -1,13 +1,14 @@
 // api/live.js
-// Versión corregida:
-// - Usa TheSportsDB API V1 oficial para traer la temporada completa.
-// - No scrapea HTML.
-// - Devuelve solo partidos con marcador real.
-// - Intenta traer estadísticas reales por evento.
-// - API-Football queda solo para partidos en vivo si hay cuota.
+// TheSportsDB + API-Football
+// - Trae temporada completa.
+// - Refuerza con partidos de ayer, hoy y mañana.
+// - API-Football queda para vivo si hay cuota.
+// - Cache corto para que actualice más rápido.
 
-const SPORTSDB_SEASON_API =
-  "https://www.thesportsdb.com/api/v1/json/123/eventsseason.php?id=4429&s=2026";
+const LEAGUE_ID = 4429;
+const SEASON = "2026";
+
+const SPORTSDB_BASE = "https://www.thesportsdb.com/api/v1/json/123";
 
 const NOMBRE_MAP = {
   "Côte d'Ivoire": "Ivory Coast",
@@ -44,7 +45,24 @@ let cache = {
   timestamp: 0
 };
 
-const CACHE_TTL_MS = 10 * 60 * 1000;
+// 2 minutos: actualiza más rápido, sin quemar tanto límite
+const CACHE_TTL_MS = 2 * 60 * 1000;
+
+function fechaUTC(offsetDias = 0) {
+  const d = new Date();
+  d.setUTCDate(d.getUTCDate() + offsetDias);
+  return d.toISOString().slice(0, 10);
+}
+
+async function fetchJSON(url) {
+  const resp = await fetch(url);
+
+  if (!resp.ok) {
+    throw new Error(`Error ${resp.status} en ${url}`);
+  }
+
+  return await resp.json();
+}
 
 function normalizarTipoStat(tipoRaw) {
   if (!tipoRaw) return null;
@@ -84,11 +102,9 @@ function normalizarTipoStat(tipoRaw) {
 
 async function obtenerStatsPorAPI(id, home, away) {
   try {
-    const statsResp = await fetch(
-      `https://www.thesportsdb.com/api/v1/json/123/lookupeventstats.php?id=${id}`
+    const statsData = await fetchJSON(
+      `${SPORTSDB_BASE}/lookupeventstats.php?id=${id}`
     );
-
-    const statsData = await statsResp.json();
 
     const posibles =
       statsData?.eventstats ||
@@ -190,7 +206,7 @@ async function convertirEventoSportsDB(evento) {
       ? Number(evento.intAwayScore)
       : null;
 
-  // Si no tiene marcador, no lo devolvemos como resultado real.
+  // Solo convertimos a resultado real si ya tiene marcador.
   if (homeScore === null || awayScore === null) {
     return null;
   }
@@ -265,6 +281,45 @@ async function convertirEventoSportsDB(evento) {
     statistics,
     source: "TheSportsDB"
   };
+}
+
+async function obtenerEventosSportsDB() {
+  const urls = [
+    `${SPORTSDB_BASE}/eventsseason.php?id=${LEAGUE_ID}&s=${SEASON}`,
+    `${SPORTSDB_BASE}/eventsday.php?d=${fechaUTC(-1)}&l=${LEAGUE_ID}`,
+    `${SPORTSDB_BASE}/eventsday.php?d=${fechaUTC(0)}&l=${LEAGUE_ID}`,
+    `${SPORTSDB_BASE}/eventsday.php?d=${fechaUTC(1)}&l=${LEAGUE_ID}`
+  ];
+
+  const respuestas = await Promise.allSettled(
+    urls.map(url => fetchJSON(url))
+  );
+
+  const mapa = new Map();
+
+  respuestas.forEach(r => {
+    if (r.status !== "fulfilled") return;
+
+    const eventos =
+      r.value?.events ||
+      r.value?.event ||
+      [];
+
+    if (!Array.isArray(eventos)) return;
+
+    eventos.forEach(e => {
+      if (!e?.idEvent) return;
+      mapa.set(e.idEvent, e);
+    });
+  });
+
+  const eventos = Array.from(mapa.values());
+
+  const convertidos = await Promise.all(
+    eventos.map(e => convertirEventoSportsDB(e))
+  );
+
+  return convertidos.filter(Boolean);
 }
 
 function normalizarFixtureAPIFootball(m) {
@@ -344,24 +399,7 @@ export default async function handler(req, res) {
       });
     }
 
-    const seasonResp = await fetch(SPORTSDB_SEASON_API);
-
-    if (!seasonResp.ok) {
-      throw new Error(`TheSportsDB respondió ${seasonResp.status}`);
-    }
-
-    const seasonData = await seasonResp.json();
-
-    const eventosTemporada =
-      seasonData?.events ||
-      seasonData?.event ||
-      [];
-
-    const eventosConvertidos = await Promise.all(
-      eventosTemporada.map(e => convertirEventoSportsDB(e))
-    );
-
-    const sportsDB = eventosConvertidos.filter(Boolean);
+    const sportsDB = await obtenerEventosSportsDB();
 
     const liveAPI = await obtenerLiveAPIFootball();
 
