@@ -894,14 +894,51 @@ function getMatchClock(p, real) {
   const diffMin = Math.floor((now - start) / 60000);
 
   if (diffMin < 0) {
-    const mins = Math.abs(diffMin);
-    if (mins < 60) return {label:`Empieza en ${mins} min`, cls:"pending"};
-    if (mins < 1440) return {label:`Empieza en ${Math.floor(mins/60)} h`, cls:"pending"};
-    return {label:"Programado", cls:""};
+  const mins = Math.abs(diffMin);
+
+  if (mins < 60) {
+    return {
+      label: `Empieza en ${mins} min`,
+      cls: "pending"
+    };
   }
 
-  return {label:"Pendiente API", cls:"pending"};
+  if (mins < 1440) {
+    return {
+      label: `Empieza en ${Math.floor(mins / 60)} h`,
+      cls: "pending"
+    };
+  }
+
+  return {
+    label: "Programado",
+    cls: ""
+  };
 }
+
+// Si ya empezó pero todavía no hay resultado en la API,
+// lo mostramos como partido en curso estimado por horario.
+if (diffMin >= 0 && diffMin <= 130) {
+  const minuto = Math.min(diffMin, 90);
+
+  return {
+    label: `En juego · ${minuto}'`,
+    cls: "live"
+  };
+}
+
+// Si terminó hace poco pero la API todavía no cargó resultado.
+if (diffMin > 130 && diffMin <= 300) {
+  return {
+    label: "Finalizado · esperando API",
+    cls: "pending"
+  };
+}
+
+return {
+  label: "Pendiente API",
+  cls: "pending"
+};
 
 let filtro = 'all';
 function setFilter(f, btn) {
