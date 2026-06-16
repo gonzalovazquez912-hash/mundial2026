@@ -1,8 +1,8 @@
 // api/live.js
 // Fuente principal gratis: TheSportsDB
 // - Extrae automáticamente IDs de partidos desde la página de temporada.
-// - Busca resultado de cada evento.
-// - Intenta traer estadísticas.
+// - Solo devuelve partidos finalizados con resultado.
+// - Intenta extraer estadísticas desde la página del evento.
 // - API-Football queda solo como extra para partidos en vivo si hay cuota.
 
 const SPORTSDB_SEASON_URL =
@@ -12,20 +12,26 @@ const NOMBRE_MAP = {
   "Côte d'Ivoire": "Ivory Coast",
   "Cote d'Ivoire": "Ivory Coast",
   "Ivory Coast": "Ivory Coast",
+
   "Czech Republic": "Czechia",
   "Czechia": "Czechia",
+
   "United States": "USA",
   "USA": "USA",
+
   "Korea Republic": "South Korea",
   "South Korea": "South Korea",
+
   "Bosnia-Herzegovina": "Bosnia",
   "Bosnia & Herzegovina": "Bosnia",
   "Bosnia and Herzegovina": "Bosnia",
   "Bosnia": "Bosnia",
+
   "Congo DR": "DR Congo",
   "DR Congo": "DR Congo",
+
   "Curaçao": "Curacao",
-  "Curacao": "Curacao",
+  "Curacao": "Curacao"
 };
 
 function normalizarNombre(nombre) {
@@ -34,10 +40,10 @@ function normalizarNombre(nombre) {
 
 let cache = {
   data: null,
-  timestamp: 0,
+  timestamp: 0
 };
 
-const CACHE_TTL_MS = 10 * 60 * 1000;
+const CACHE_TTL_MS = 10 * 60 * 1000; // 10 minutos
 
 function extraerEventIds(html) {
   const ids = new Set();
@@ -52,124 +58,231 @@ function extraerEventIds(html) {
   return Array.from(ids);
 }
 
-function estadoAPIFootball(evento) {
-  const scoreHome = evento.intHomeScore;
-  const scoreAway = evento.intAwayScore;
-
-  const terminado =
-    scoreHome !== null &&
-    scoreHome !== undefined &&
-    scoreHome !== "" &&
-    scoreAway !== null &&
-    scoreAway !== undefined &&
-    scoreAway !== "";
-
-  if (terminado) {
-    return {
-      long: "Match Finished",
-      short: "FT",
-      elapsed: 90,
-      extra: null,
-    };
-  }
-
-  return {
-    long: "Not Started",
-    short: "NS",
-    elapsed: null,
-    extra: null,
-  };
+function limpiarTextoHtml(html) {
+  return html
+    .replace(/<script[\s\S]*?<\/script>/gi, "")
+    .replace(/<style[\s\S]*?<\/style>/gi, "")
+    .replace(/<[^>]+>/g, "\n")
+    .replace(/&nbsp;/g, " ")
+    .replace(/&amp;/g, "&")
+    .replace(/&#039;/g, "'")
+    .replace(/&quot;/g, '"')
+    .split("\n")
+    .map(x => x.trim())
+    .filter(Boolean);
 }
 
-function convertirStatsSportsDB(statsData, home, away) {
-  const posibles =
-    statsData?.eventstats ||
-    statsData?.event_stats ||
-    statsData?.stats ||
-    statsData?.statistics ||
-    [];
+function parsearNumero(valor) {
+  if (valor === null || valor === undefined) return null;
 
-  if (!Array.isArray(posibles) || posibles.length === 0) {
-    return [];
+  const limpio = String(valor)
+    .replace("%", "")
+    .replace(",", ".")
+    .trim();
+
+  const n = Number(limpio);
+
+  if (Number.isNaN(n)) return valor;
+
+  if (String(valor).includes("%")) return `${n}%`;
+
+  return n;
+}
+
+function buscarValorAnterior(tokens, index) {
+  for (let i = index - 1; i >= 0; i--) {
+    if (/^-?\d+(\.\d+)?%?$/.test(tokens[i])) {
+      return parsearNumero(tokens[i]);
+    }
   }
+
+  return null;
+}
+
+function buscarValorPosterior(tokens, index) {
+  for (let i = index + 1; i < tokens.length; i++) {
+    if (/^-?\d+(\.\d+)?%?$/.test(tokens[i])) {
+      return parsearNumero(tokens[i]);
+    }
+  }
+
+  return null;
+}
+
+function extraerStatsDesdePaginaEvento(html, home, away) {
+  const tokens = limpiarTextoHtml(html);
+
+  const labels = {
+    "SHOTS ON GOAL": "Shots on Goal",
+    "SHOTS OFF GOAL": "Shots off Goal",
+    "TOTAL SHOTS": "Total Shots",
+    "BLOCKED SHOTS": "Blocked Shots",
+    "SHOTS INSIDEBOX": "Shots insidebox",
+    "SHOTS OUTSIDEBOX": "Shots outsidebox",
+    "FOULS": "Fouls",
+    "CORNER KICKS": "Corner Kicks",
+    "OFFSIDES": "Offsides",
+    "OFF SIDES": "Offsides",
+    "BALL POSSESSION": "Ball Possession",
+    "YELLOW CARDS": "Yellow Cards",
+    "RED CARDS": "Red Cards",
+    "GOALKEEPER SAVES": "Goalkeeper Saves",
+    "TOTAL PASSES": "Total passes",
+    "PASSES ACCURATE": "Passes accurate",
+    "PASSES %": "Passes %",
+    "EXPECTED_GOALS": "expected_goals",
+    "EXPECTED GOALS": "expected_goals",
+    "GOALS_PREVENTED": "goals_prevented"
+  };
 
   const homeStats = [];
   const awayStats = [];
 
-  posibles.forEach((s) => {
-    const tipo =
-      s.strStat ||
-      s.strStatistic ||
-      s.strMeasure ||
-      s.type ||
-      s.name;
+  Object.entries(labels).forEach(([labelOriginal, labelFinal]) => {
+    const idx = tokens.findIndex(
+      t => t.toUpperCase() === labelOriginal
+    );
 
-    const homeVal =
-      s.intHome ||
-      s.strHome ||
-      s.home ||
-      s.homeValue ||
-      s.valueHome;
+    if (idx === -1) return;
 
-    const awayVal =
-      s.intAway ||
-      s.strAway ||
-      s.away ||
-      s.awayValue ||
-      s.valueAway;
-
-    if (!tipo) return;
-
-    const mapTipos = {
-      "SHOTS ON GOAL": "Shots on Goal",
-      "SHOTS OFF GOAL": "Shots off Goal",
-      "TOTAL SHOTS": "Total Shots",
-      "BLOCKED SHOTS": "Blocked Shots",
-      "SHOTS INSIDEBOX": "Shots insidebox",
-      "SHOTS OUTSIDEBOX": "Shots outsidebox",
-      "FOULS": "Fouls",
-      "CORNER KICKS": "Corner Kicks",
-      "OFF SIDES": "Offsides",
-      "OFFSIDES": "Offsides",
-      "BALL POSSESSION": "Ball Possession",
-      "YELLOW CARDS": "Yellow Cards",
-      "RED CARDS": "Red Cards",
-      "GOALKEEPER SAVES": "Goalkeeper Saves",
-      "TOTAL PASSES": "Total passes",
-      "PASSES ACCURATE": "Passes accurate",
-      "PASSES %": "Passes %",
-      "EXPECTED_GOALS": "expected_goals",
-      "EXPECTED GOALS": "expected_goals",
-      "GOALS_PREVENTED": "goals_prevented",
-    };
-
-    const tipoFinal = mapTipos[String(tipo).toUpperCase()] || tipo;
+    const homeValue = buscarValorAnterior(tokens, idx);
+    const awayValue = buscarValorPosterior(tokens, idx);
 
     homeStats.push({
-      type: tipoFinal,
-      value: homeVal ?? null,
+      type: labelFinal,
+      value: homeValue
     });
 
     awayStats.push({
-      type: tipoFinal,
-      value: awayVal ?? null,
+      type: labelFinal,
+      value: awayValue
     });
   });
+
+  if (!homeStats.length) return [];
 
   return [
     {
       team: {
-        name: home,
+        name: home
       },
-      statistics: homeStats,
+      statistics: homeStats
     },
     {
       team: {
-        name: away,
+        name: away
       },
-      statistics: awayStats,
-    },
+      statistics: awayStats
+    }
   ];
+}
+
+async function obtenerStatsPorAPI(id, home, away) {
+  try {
+    const statsResp = await fetch(
+      `https://www.thesportsdb.com/api/v2/json/lookup/event_stats/${id}`
+    );
+
+    const statsData = await statsResp.json();
+
+    const posibles =
+      statsData?.eventstats ||
+      statsData?.event_stats ||
+      statsData?.stats ||
+      statsData?.statistics ||
+      [];
+
+    if (!Array.isArray(posibles) || posibles.length === 0) {
+      return [];
+    }
+
+    const homeStats = [];
+    const awayStats = [];
+
+    posibles.forEach(s => {
+      const tipo =
+        s.strStat ||
+        s.strStatistic ||
+        s.strMeasure ||
+        s.type ||
+        s.name;
+
+      const homeVal =
+        s.intHome ??
+        s.strHome ??
+        s.home ??
+        s.homeValue ??
+        s.valueHome ??
+        null;
+
+      const awayVal =
+        s.intAway ??
+        s.strAway ??
+        s.away ??
+        s.awayValue ??
+        s.valueAway ??
+        null;
+
+      if (!tipo) return;
+
+      homeStats.push({
+        type: tipo,
+        value: homeVal
+      });
+
+      awayStats.push({
+        type: tipo,
+        value: awayVal
+      });
+    });
+
+    if (!homeStats.length) return [];
+
+    return [
+      {
+        team: {
+          name: home
+        },
+        statistics: homeStats
+      },
+      {
+        team: {
+          name: away
+        },
+        statistics: awayStats
+      }
+    ];
+
+  } catch {
+    return [];
+  }
+}
+
+async function obtenerStatsEvento(id, home, away) {
+  let statistics = await obtenerStatsPorAPI(id, home, away);
+
+  if (statistics.length) {
+    return statistics;
+  }
+
+  try {
+    const pageResp = await fetch(
+      `https://www.thesportsdb.com/event/${id}`
+    );
+
+    const pageHtml = await pageResp.text();
+
+    statistics = extraerStatsDesdePaginaEvento(
+      pageHtml,
+      home,
+      away
+    );
+
+    return statistics;
+
+  } catch {
+    return [];
+  }
 }
 
 async function obtenerEventoSportsDB(id) {
@@ -186,20 +299,6 @@ async function obtenerEventoSportsDB(id) {
   const home = normalizarNombre(evento.strHomeTeam);
   const away = normalizarNombre(evento.strAwayTeam);
 
-  let statistics = [];
-
-  try {
-    const statsResp = await fetch(
-      `https://www.thesportsdb.com/api/v2/json/lookup/event_stats/${id}`
-    );
-
-    const statsData = await statsResp.json();
-
-    statistics = convertirStatsSportsDB(statsData, home, away);
-  } catch {
-    statistics = [];
-  }
-
   const homeScore =
     evento.intHomeScore !== null &&
     evento.intHomeScore !== undefined &&
@@ -214,62 +313,76 @@ async function obtenerEventoSportsDB(id) {
       ? Number(evento.intAwayScore)
       : null;
 
+  // CLAVE:
+  // Si no tiene resultado, no se devuelve.
+  // Así los partidos futuros no aparecen como "en vivo".
+  if (homeScore === null || awayScore === null) {
+    return null;
+  }
+
+  const statistics = await obtenerStatsEvento(
+    id,
+    home,
+    away
+  );
+
   return {
     fixture: {
       id: Number(id),
       date: evento.dateEvent,
-      status: estadoAPIFootball(evento),
+      status: {
+        long: "Match Finished",
+        short: "FT",
+        elapsed: 90,
+        extra: null
+      }
     },
     league: {
       id: 1,
       name: "World Cup",
       country: "World",
       season: 2026,
-      round: evento.intRound ? `Round ${evento.intRound}` : "Group Stage",
+      round: evento.intRound
+        ? `Round ${evento.intRound}`
+        : "Group Stage"
     },
     teams: {
       home: {
         id: evento.idHomeTeam ? Number(evento.idHomeTeam) : null,
         name: home,
-        winner:
-          homeScore !== null && awayScore !== null
-            ? homeScore > awayScore
-            : null,
+        winner: homeScore > awayScore
       },
       away: {
         id: evento.idAwayTeam ? Number(evento.idAwayTeam) : null,
         name: away,
-        winner:
-          homeScore !== null && awayScore !== null
-            ? awayScore > homeScore
-            : null,
-      },
+        winner: awayScore > homeScore
+      }
     },
     goals: {
       home: homeScore,
-      away: awayScore,
+      away: awayScore
     },
     score: {
       halftime: {
         home: null,
-        away: null,
+        away: null
       },
       fulltime: {
         home: homeScore,
-        away: awayScore,
+        away: awayScore
       },
       extratime: {
         home: null,
-        away: null,
+        away: null
       },
       penalty: {
         home: null,
-        away: null,
-      },
+        away: null
+      }
     },
     events: [],
     statistics,
-    source: "TheSportsDB",
+    source: "TheSportsDB"
   };
 }
 
@@ -278,19 +391,19 @@ function normalizarFixtureAPIFootball(m) {
     ...m,
     league: {
       ...m.league,
-      season: Number(m.league?.season),
+      season: Number(m.league?.season)
     },
     teams: {
       home: {
         ...m.teams.home,
-        name: normalizarNombre(m.teams.home.name),
+        name: normalizarNombre(m.teams.home.name)
       },
       away: {
         ...m.teams.away,
-        name: normalizarNombre(m.teams.away.name),
-      },
+        name: normalizarNombre(m.teams.away.name)
+      }
     },
-    source: "API-Football",
+    source: "API-Football"
   };
 }
 
@@ -304,20 +417,26 @@ async function obtenerLiveAPIFootball() {
       "https://v3.football.api-sports.io/fixtures?live=all",
       {
         headers: {
-          "x-apisports-key": key,
-        },
+          "x-apisports-key": key
+        }
       }
     );
 
     const data = await resp.json();
 
-    if (data.errors?.requests || data.message === "Too many requests") {
+    if (
+      data.errors?.requests ||
+      data.message === "Too many requests"
+    ) {
       return [];
     }
 
     return (data.response || [])
       .map(normalizarFixtureAPIFootball)
-      .filter((m) => m.league?.id === 1 && m.league?.season === 2026);
+      .filter(
+        m => m.league?.id === 1 && m.league?.season === 2026
+      );
+
   } catch {
     return [];
   }
@@ -338,7 +457,7 @@ export default async function handler(req, res) {
     if (cache.data && ahora - cache.timestamp < CACHE_TTL_MS) {
       return res.status(200).json({
         ...cache.data,
-        cache: true,
+        cache: true
       });
     }
 
@@ -348,7 +467,7 @@ export default async function handler(req, res) {
     const ids = extraerEventIds(html);
 
     const eventos = await Promise.all(
-      ids.map((id) => obtenerEventoSportsDB(id))
+      ids.map(id => obtenerEventoSportsDB(id))
     );
 
     const sportsDB = eventos.filter(Boolean);
@@ -357,12 +476,18 @@ export default async function handler(req, res) {
 
     const mapa = new Map();
 
-    sportsDB.forEach((m) => {
-      mapa.set(`${m.teams.home.name}-${m.teams.away.name}`, m);
+    sportsDB.forEach(m => {
+      mapa.set(
+        `${m.teams.home.name}-${m.teams.away.name}`,
+        m
+      );
     });
 
-    liveAPI.forEach((m) => {
-      mapa.set(`${m.teams.home.name}-${m.teams.away.name}`, m);
+    liveAPI.forEach(m => {
+      mapa.set(
+        `${m.teams.home.name}-${m.teams.away.name}`,
+        m
+      );
     });
 
     const response = Array.from(mapa.values());
@@ -373,18 +498,19 @@ export default async function handler(req, res) {
       response,
       fuente: liveAPI.length
         ? "TheSportsDB + API-Football"
-        : "TheSportsDB",
+        : "TheSportsDB"
     };
 
     cache = {
       data: payload,
-      timestamp: ahora,
+      timestamp: ahora
     };
 
     return res.status(200).json(payload);
+
   } catch (error) {
     return res.status(500).json({
-      error: error.message,
+      error: error.message
     });
   }
 }
