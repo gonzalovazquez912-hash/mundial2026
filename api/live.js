@@ -1,28 +1,36 @@
 // api/live.js
-// Fuente principal gratis: TheSportsDB V1
-// - Resultados reales finalizados desde la temporada 2026.
-// - Estadísticas reales SOLO desde API estructurada V1.
+// Versión corregida:
+// - Usa TheSportsDB API V1 oficial para traer la temporada completa.
+// - No scrapea HTML.
+// - Devuelve solo partidos con marcador real.
+// - Intenta traer estadísticas reales por evento.
 // - API-Football queda solo para partidos en vivo si hay cuota.
 
-const SPORTSDB_SEASON_URL =
-  "https://www.thesportsdb.com/season/4429-fifa-world-cup/2026";
+const SPORTSDB_SEASON_API =
+  "https://www.thesportsdb.com/api/v1/json/123/eventsseason.php?id=4429&s=2026";
 
 const NOMBRE_MAP = {
   "Côte d'Ivoire": "Ivory Coast",
   "Cote d'Ivoire": "Ivory Coast",
   "Ivory Coast": "Ivory Coast",
+
   "Czech Republic": "Czechia",
   "Czechia": "Czechia",
+
   "United States": "USA",
   "USA": "USA",
+
   "Korea Republic": "South Korea",
   "South Korea": "South Korea",
+
   "Bosnia-Herzegovina": "Bosnia",
   "Bosnia & Herzegovina": "Bosnia",
   "Bosnia and Herzegovina": "Bosnia",
   "Bosnia": "Bosnia",
+
   "Congo DR": "DR Congo",
   "DR Congo": "DR Congo",
+
   "Curaçao": "Curacao",
   "Curacao": "Curacao"
 };
@@ -37,18 +45,6 @@ let cache = {
 };
 
 const CACHE_TTL_MS = 10 * 60 * 1000;
-
-function extraerEventIds(html) {
-  const ids = new Set();
-  const regex = /\/event\/(\d+)-/g;
-  let match;
-
-  while ((match = regex.exec(html)) !== null) {
-    ids.add(match[1]);
-  }
-
-  return Array.from(ids);
-}
 
 function normalizarTipoStat(tipoRaw) {
   if (!tipoRaw) return null;
@@ -154,9 +150,7 @@ async function obtenerStatsPorAPI(id, home, away) {
       });
     });
 
-    if (!homeStats.length) {
-      return [];
-    }
+    if (!homeStats.length) return [];
 
     return [
       {
@@ -178,112 +172,99 @@ async function obtenerStatsPorAPI(id, home, away) {
   }
 }
 
-async function obtenerEventoSportsDB(id) {
-  try {
-    const eventResp = await fetch(
-      `https://www.thesportsdb.com/api/v1/json/123/lookupevent.php?id=${id}`
-    );
+async function convertirEventoSportsDB(evento) {
+  const home = normalizarNombre(evento.strHomeTeam);
+  const away = normalizarNombre(evento.strAwayTeam);
 
-    const eventData = await eventResp.json();
+  const homeScore =
+    evento.intHomeScore !== null &&
+    evento.intHomeScore !== undefined &&
+    evento.intHomeScore !== ""
+      ? Number(evento.intHomeScore)
+      : null;
 
-    const evento = eventData?.events?.[0];
+  const awayScore =
+    evento.intAwayScore !== null &&
+    evento.intAwayScore !== undefined &&
+    evento.intAwayScore !== ""
+      ? Number(evento.intAwayScore)
+      : null;
 
-    if (!evento) return null;
+  // Si no tiene marcador, no lo devolvemos como resultado real.
+  if (homeScore === null || awayScore === null) {
+    return null;
+  }
 
-    const home = normalizarNombre(evento.strHomeTeam);
-    const away = normalizarNombre(evento.strAwayTeam);
+  const id = evento.idEvent;
 
-    const homeScore =
-      evento.intHomeScore !== null &&
-      evento.intHomeScore !== undefined &&
-      evento.intHomeScore !== ""
-        ? Number(evento.intHomeScore)
-        : null;
+  const statistics = await obtenerStatsPorAPI(
+    id,
+    home,
+    away
+  );
 
-    const awayScore =
-      evento.intAwayScore !== null &&
-      evento.intAwayScore !== undefined &&
-      evento.intAwayScore !== ""
-        ? Number(evento.intAwayScore)
-        : null;
-
-    // Si no tiene marcador, no lo devolvemos como resultado real.
-    if (homeScore === null || awayScore === null) {
-      return null;
-    }
-
-    const statistics = await obtenerStatsPorAPI(
-      id,
-      home,
-      away
-    );
-
-    return {
-      fixture: {
-        id: Number(id),
-        date: evento.dateEvent,
-        status: {
-          long: "Match Finished",
-          short: "FT",
-          elapsed: 90,
-          extra: null
-        }
+  return {
+    fixture: {
+      id: Number(id),
+      date: evento.dateEvent,
+      status: {
+        long: "Match Finished",
+        short: "FT",
+        elapsed: 90,
+        extra: null
+      }
+    },
+    league: {
+      id: 1,
+      name: "World Cup",
+      country: "World",
+      season: 2026,
+      round: evento.intRound
+        ? `Round ${evento.intRound}`
+        : "Group Stage"
+    },
+    teams: {
+      home: {
+        id: evento.idHomeTeam
+          ? Number(evento.idHomeTeam)
+          : null,
+        name: home,
+        winner: homeScore > awayScore
       },
-      league: {
-        id: 1,
-        name: "World Cup",
-        country: "World",
-        season: 2026,
-        round: evento.intRound
-          ? `Round ${evento.intRound}`
-          : "Group Stage"
+      away: {
+        id: evento.idAwayTeam
+          ? Number(evento.idAwayTeam)
+          : null,
+        name: away,
+        winner: awayScore > homeScore
+      }
+    },
+    goals: {
+      home: homeScore,
+      away: awayScore
+    },
+    score: {
+      halftime: {
+        home: null,
+        away: null
       },
-      teams: {
-        home: {
-          id: evento.idHomeTeam
-            ? Number(evento.idHomeTeam)
-            : null,
-          name: home,
-          winner: homeScore > awayScore
-        },
-        away: {
-          id: evento.idAwayTeam
-            ? Number(evento.idAwayTeam)
-            : null,
-          name: away,
-          winner: awayScore > homeScore
-        }
-      },
-      goals: {
+      fulltime: {
         home: homeScore,
         away: awayScore
       },
-      score: {
-        halftime: {
-          home: null,
-          away: null
-        },
-        fulltime: {
-          home: homeScore,
-          away: awayScore
-        },
-        extratime: {
-          home: null,
-          away: null
-        },
-        penalty: {
-          home: null,
-          away: null
-        }
+      extratime: {
+        home: null,
+        away: null
       },
-      events: [],
-      statistics,
-      source: "TheSportsDB"
-    };
-
-  } catch {
-    return null;
-  }
+      penalty: {
+        home: null,
+        away: null
+      }
+    },
+    events: [],
+    statistics,
+    source: "TheSportsDB"
+  };
 }
 
 function normalizarFixtureAPIFootball(m) {
@@ -334,8 +315,9 @@ async function obtenerLiveAPIFootball() {
     return (data.response || [])
       .map(normalizarFixtureAPIFootball)
       .filter(
-        m => m.league?.id === 1 &&
-        Number(m.league?.season) === 2026
+        m =>
+          m.league?.id === 1 &&
+          Number(m.league?.season) === 2026
       );
 
   } catch {
@@ -362,16 +344,24 @@ export default async function handler(req, res) {
       });
     }
 
-    const seasonResp = await fetch(SPORTSDB_SEASON_URL);
-    const html = await seasonResp.text();
+    const seasonResp = await fetch(SPORTSDB_SEASON_API);
 
-    const ids = extraerEventIds(html);
+    if (!seasonResp.ok) {
+      throw new Error(`TheSportsDB respondió ${seasonResp.status}`);
+    }
 
-    const eventos = await Promise.all(
-      ids.map(id => obtenerEventoSportsDB(id))
+    const seasonData = await seasonResp.json();
+
+    const eventosTemporada =
+      seasonData?.events ||
+      seasonData?.event ||
+      [];
+
+    const eventosConvertidos = await Promise.all(
+      eventosTemporada.map(e => convertirEventoSportsDB(e))
     );
 
-    const sportsDB = eventos.filter(Boolean);
+    const sportsDB = eventosConvertidos.filter(Boolean);
 
     const liveAPI = await obtenerLiveAPIFootball();
 
