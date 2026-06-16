@@ -61,8 +61,125 @@ function extraerEventIds(html) {
 async function obtenerStatsPorAPI(id, home, away) {
   try {
     const statsResp = await fetch(
-      `https://www.thesportsdb.com/api/v2/json/lookup/event_stats/${id}`
+      `https://www.thesportsdb.com/api/v1/json/123/lookupeventstats.php?id=${id}`
     );
+
+    const statsData = await statsResp.json();
+
+    const posibles =
+      statsData?.eventstats ||
+      statsData?.eventStats ||
+      statsData?.results ||
+      statsData?.stats ||
+      statsData?.statistics ||
+      [];
+
+    if (!Array.isArray(posibles) || posibles.length === 0) {
+      return [];
+    }
+
+    const homeStats = [];
+    const awayStats = [];
+
+    const tiposPermitidos = {
+      "SHOTS ON GOAL": "Shots on Goal",
+      "SHOTS OFF GOAL": "Shots off Goal",
+      "TOTAL SHOTS": "Total Shots",
+      "BLOCKED SHOTS": "Blocked Shots",
+      "SHOTS INSIDEBOX": "Shots insidebox",
+      "SHOTS OUTSIDEBOX": "Shots outsidebox",
+      "FOULS": "Fouls",
+      "CORNER KICKS": "Corner Kicks",
+      "CORNERS": "Corner Kicks",
+      "OFFSIDES": "Offsides",
+      "OFF SIDES": "Offsides",
+      "BALL POSSESSION": "Ball Possession",
+      "POSSESSION": "Ball Possession",
+      "YELLOW CARDS": "Yellow Cards",
+      "RED CARDS": "Red Cards",
+      "GOALKEEPER SAVES": "Goalkeeper Saves",
+      "TOTAL PASSES": "Total passes",
+      "PASSES ACCURATE": "Passes accurate",
+      "PASSES %": "Passes %",
+      "EXPECTED_GOALS": "expected_goals",
+      "EXPECTED GOALS": "expected_goals",
+      "GOALS_PREVENTED": "goals_prevented"
+    };
+
+    posibles.forEach(s => {
+      const tipoRaw =
+        s.strStat ||
+        s.strStatistic ||
+        s.strMeasure ||
+        s.strEventStat ||
+        s.strType ||
+        s.type ||
+        s.name;
+
+      if (!tipoRaw) return;
+
+      const tipoKey = String(tipoRaw)
+        .toUpperCase()
+        .trim();
+
+      const tipoFinal = tiposPermitidos[tipoKey];
+
+      if (!tipoFinal) return;
+
+      const homeVal =
+        s.intHome ??
+        s.strHome ??
+        s.intHomeValue ??
+        s.strHomeValue ??
+        s.home ??
+        s.homeValue ??
+        s.valueHome ??
+        null;
+
+      const awayVal =
+        s.intAway ??
+        s.strAway ??
+        s.intAwayValue ??
+        s.strAwayValue ??
+        s.away ??
+        s.awayValue ??
+        s.valueAway ??
+        null;
+
+      if (homeVal === null || awayVal === null) return;
+
+      homeStats.push({
+        type: tipoFinal,
+        value: homeVal
+      });
+
+      awayStats.push({
+        type: tipoFinal,
+        value: awayVal
+      });
+    });
+
+    if (!homeStats.length) return [];
+
+    return [
+      {
+        team: {
+          name: home
+        },
+        statistics: homeStats
+      },
+      {
+        team: {
+          name: away
+        },
+        statistics: awayStats
+      }
+    ];
+
+  } catch {
+    return [];
+  }
+}
 
     const statsData = await statsResp.json();
 
