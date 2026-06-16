@@ -1018,7 +1018,9 @@ function renderLiveStats(real, a, b, r) {
 
 
 function valorStatMostrar(v) {
-  if (v === null || v === undefined || v === "—" || v === "") return "—";
+  if (v === null || v === undefined || v === "—" || v === "") {
+    return "Sin dato";
+  }
   return v;
 }
 
