@@ -1,9 +1,8 @@
 // api/live.js
-// Versión segura:
-// - TheSportsDB: resultados reales finalizados.
-// - API-Football: solo partidos en vivo si hay cuota.
-// - Estadísticas: SOLO si vienen desde API estructurada.
-// - No scrapea estadísticas desde HTML para evitar datos falsos.
+// Fuente principal gratis: TheSportsDB V1
+// - Resultados reales finalizados desde la temporada 2026.
+// - Estadísticas reales SOLO desde API estructurada V1.
+// - API-Football queda solo para partidos en vivo si hay cuota.
 
 const SPORTSDB_SEASON_URL =
   "https://www.thesportsdb.com/season/4429-fifa-world-cup/2026";
@@ -12,24 +11,18 @@ const NOMBRE_MAP = {
   "Côte d'Ivoire": "Ivory Coast",
   "Cote d'Ivoire": "Ivory Coast",
   "Ivory Coast": "Ivory Coast",
-
   "Czech Republic": "Czechia",
   "Czechia": "Czechia",
-
   "United States": "USA",
   "USA": "USA",
-
   "Korea Republic": "South Korea",
   "South Korea": "South Korea",
-
   "Bosnia-Herzegovina": "Bosnia",
   "Bosnia & Herzegovina": "Bosnia",
   "Bosnia and Herzegovina": "Bosnia",
   "Bosnia": "Bosnia",
-
   "Congo DR": "DR Congo",
   "DR Congo": "DR Congo",
-
   "Curaçao": "Curacao",
   "Curacao": "Curacao"
 };
@@ -43,11 +36,10 @@ let cache = {
   timestamp: 0
 };
 
-const CACHE_TTL_MS = 10 * 60 * 1000; // 10 minutos
+const CACHE_TTL_MS = 10 * 60 * 1000;
 
 function extraerEventIds(html) {
   const ids = new Set();
-
   const regex = /\/event\/(\d+)-/g;
   let match;
 
@@ -56,6 +48,42 @@ function extraerEventIds(html) {
   }
 
   return Array.from(ids);
+}
+
+function normalizarTipoStat(tipoRaw) {
+  if (!tipoRaw) return null;
+
+  const k = String(tipoRaw)
+    .toUpperCase()
+    .replace(/_/g, " ")
+    .trim();
+
+  const map = {
+    "SHOTS ON GOAL": "Shots on Goal",
+    "SHOTS OFF GOAL": "Shots off Goal",
+    "TOTAL SHOTS": "Total Shots",
+    "BLOCKED SHOTS": "Blocked Shots",
+    "SHOTS INSIDEBOX": "Shots insidebox",
+    "SHOTS OUTSIDEBOX": "Shots outsidebox",
+    "FOULS": "Fouls",
+    "CORNER KICKS": "Corner Kicks",
+    "CORNERS": "Corner Kicks",
+    "OFFSIDES": "Offsides",
+    "OFF SIDES": "Offsides",
+    "BALL POSSESSION": "Ball Possession",
+    "POSSESSION": "Ball Possession",
+    "YELLOW CARDS": "Yellow Cards",
+    "RED CARDS": "Red Cards",
+    "GOALKEEPER SAVES": "Goalkeeper Saves",
+    "TOTAL PASSES": "Total passes",
+    "PASSES ACCURATE": "Passes accurate",
+    "PASSES %": "Passes %",
+    "EXPECTED GOALS": "expected_goals",
+    "EXPECTED GOALS XG": "expected_goals",
+    "GOALS PREVENTED": "goals_prevented"
+  };
+
+  return map[k] || null;
 }
 
 async function obtenerStatsPorAPI(id, home, away) {
@@ -70,41 +98,14 @@ async function obtenerStatsPorAPI(id, home, away) {
       statsData?.eventstats ||
       statsData?.eventStats ||
       statsData?.results ||
-      statsData?.stats ||
-      statsData?.statistics ||
       [];
 
-    if (!Array.isArray(posibles) || posibles.length === 0) {
+    if (!Array.isArray(posibles) || !posibles.length) {
       return [];
     }
 
     const homeStats = [];
     const awayStats = [];
-
-    const tiposPermitidos = {
-      "SHOTS ON GOAL": "Shots on Goal",
-      "SHOTS OFF GOAL": "Shots off Goal",
-      "TOTAL SHOTS": "Total Shots",
-      "BLOCKED SHOTS": "Blocked Shots",
-      "SHOTS INSIDEBOX": "Shots insidebox",
-      "SHOTS OUTSIDEBOX": "Shots outsidebox",
-      "FOULS": "Fouls",
-      "CORNER KICKS": "Corner Kicks",
-      "CORNERS": "Corner Kicks",
-      "OFFSIDES": "Offsides",
-      "OFF SIDES": "Offsides",
-      "BALL POSSESSION": "Ball Possession",
-      "POSSESSION": "Ball Possession",
-      "YELLOW CARDS": "Yellow Cards",
-      "RED CARDS": "Red Cards",
-      "GOALKEEPER SAVES": "Goalkeeper Saves",
-      "TOTAL PASSES": "Total passes",
-      "PASSES ACCURATE": "Passes accurate",
-      "PASSES %": "Passes %",
-      "EXPECTED_GOALS": "expected_goals",
-      "EXPECTED GOALS": "expected_goals",
-      "GOALS_PREVENTED": "goals_prevented"
-    };
 
     posibles.forEach(s => {
       const tipoRaw =
@@ -116,13 +117,7 @@ async function obtenerStatsPorAPI(id, home, away) {
         s.type ||
         s.name;
 
-      if (!tipoRaw) return;
-
-      const tipoKey = String(tipoRaw)
-        .toUpperCase()
-        .trim();
-
-      const tipoFinal = tiposPermitidos[tipoKey];
+      const tipoFinal = normalizarTipoStat(tipoRaw);
 
       if (!tipoFinal) return;
 
@@ -141,114 +136,6 @@ async function obtenerStatsPorAPI(id, home, away) {
         s.strAway ??
         s.intAwayValue ??
         s.strAwayValue ??
-        s.away ??
-        s.awayValue ??
-        s.valueAway ??
-        null;
-
-      if (homeVal === null || awayVal === null) return;
-
-      homeStats.push({
-        type: tipoFinal,
-        value: homeVal
-      });
-
-      awayStats.push({
-        type: tipoFinal,
-        value: awayVal
-      });
-    });
-
-    if (!homeStats.length) return [];
-
-    return [
-      {
-        team: {
-          name: home
-        },
-        statistics: homeStats
-      },
-      {
-        team: {
-          name: away
-        },
-        statistics: awayStats
-      }
-    ];
-
-  } catch {
-    return [];
-  }
-}
-
-    const statsData = await statsResp.json();
-
-    const posibles =
-      statsData?.eventstats ||
-      statsData?.event_stats ||
-      statsData?.stats ||
-      statsData?.statistics ||
-      [];
-
-    if (!Array.isArray(posibles) || posibles.length === 0) {
-      return [];
-    }
-
-    const homeStats = [];
-    const awayStats = [];
-
-    const tiposPermitidos = {
-      "SHOTS ON GOAL": "Shots on Goal",
-      "SHOTS OFF GOAL": "Shots off Goal",
-      "TOTAL SHOTS": "Total Shots",
-      "BLOCKED SHOTS": "Blocked Shots",
-      "SHOTS INSIDEBOX": "Shots insidebox",
-      "SHOTS OUTSIDEBOX": "Shots outsidebox",
-      "FOULS": "Fouls",
-      "CORNER KICKS": "Corner Kicks",
-      "OFFSIDES": "Offsides",
-      "OFF SIDES": "Offsides",
-      "BALL POSSESSION": "Ball Possession",
-      "YELLOW CARDS": "Yellow Cards",
-      "RED CARDS": "Red Cards",
-      "GOALKEEPER SAVES": "Goalkeeper Saves",
-      "TOTAL PASSES": "Total passes",
-      "PASSES ACCURATE": "Passes accurate",
-      "PASSES %": "Passes %",
-      "EXPECTED_GOALS": "expected_goals",
-      "EXPECTED GOALS": "expected_goals",
-      "GOALS_PREVENTED": "goals_prevented"
-    };
-
-    posibles.forEach(s => {
-      const tipoRaw =
-        s.strStat ||
-        s.strStatistic ||
-        s.strMeasure ||
-        s.type ||
-        s.name;
-
-      if (!tipoRaw) return;
-
-      const tipoKey = String(tipoRaw)
-        .toUpperCase()
-        .trim();
-
-      const tipoFinal = tiposPermitidos[tipoKey];
-
-      if (!tipoFinal) return;
-
-      const homeVal =
-        s.intHome ??
-        s.strHome ??
-        s.home ??
-        s.homeValue ??
-        s.valueHome ??
-        null;
-
-      const awayVal =
-        s.intAway ??
-        s.strAway ??
         s.away ??
         s.awayValue ??
         s.valueAway ??
@@ -291,23 +178,10 @@ async function obtenerStatsPorAPI(id, home, away) {
   }
 }
 
-async function obtenerStatsEvento(id, home, away) {
-  // IMPORTANTE:
-  // No scrapeamos estadísticas desde HTML porque puede tomar números incorrectos.
-  // Solo aceptamos datos si vienen desde API estructurada.
-  const statistics = await obtenerStatsPorAPI(id, home, away);
-
-  if (!statistics.length) {
-    return [];
-  }
-
-  return statistics;
-}
-
 async function obtenerEventoSportsDB(id) {
   try {
     const eventResp = await fetch(
-      `https://www.thesportsdb.com/api/v1/json/3/lookupevent.php?id=${id}`
+      `https://www.thesportsdb.com/api/v1/json/123/lookupevent.php?id=${id}`
     );
 
     const eventData = await eventResp.json();
@@ -333,14 +207,12 @@ async function obtenerEventoSportsDB(id) {
         ? Number(evento.intAwayScore)
         : null;
 
-    // CLAVE:
-    // Si no tiene resultado, no lo devolvemos.
-    // Así los partidos futuros no aparecen como "en vivo".
+    // Si no tiene marcador, no lo devolvemos como resultado real.
     if (homeScore === null || awayScore === null) {
       return null;
     }
 
-    const statistics = await obtenerStatsEvento(
+    const statistics = await obtenerStatsPorAPI(
       id,
       home,
       away
@@ -462,7 +334,8 @@ async function obtenerLiveAPIFootball() {
     return (data.response || [])
       .map(normalizarFixtureAPIFootball)
       .filter(
-        m => m.league?.id === 1 && m.league?.season === 2026
+        m => m.league?.id === 1 &&
+        Number(m.league?.season) === 2026
       );
 
   } catch {
