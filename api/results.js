@@ -10,21 +10,20 @@ export default async function handler(req, res) {
       }
     });
 
-    if (!upstream.ok) {
-      return res.status(upstream.status).json({
-        error: "No se pudo consultar la API de resultados",
-        status: upstream.status
-      });
+    if (upstream.ok) {
+      const data = await upstream.json();
+      res.setHeader("Cache-Control", "s-maxage=60, stale-while-revalidate=300");
+      return res.status(200).json(data);
     }
 
-    const data = await upstream.json();
-
-    res.setHeader("Cache-Control", "s-maxage=60, stale-while-revalidate=300");
-    return res.status(200).json(data);
+    return res.status(200).json({
+      fallback: true,
+      games: []
+    });
   } catch (error) {
-    return res.status(500).json({
-      error: "Error interno consultando resultados",
-      message: error.message
+    return res.status(200).json({
+      fallback: true,
+      games: []
     });
   }
 }
