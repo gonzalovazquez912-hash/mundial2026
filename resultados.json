@@ -1,0 +1,168 @@
+{
+  "updatedAt": "2026-06-29T12:10:00-03:00",
+  "knockoutMatches": [
+    {
+      "id": "53452545",
+      "date": "2026-06-28",
+      "timeAR": "16:00",
+      "round": "16avos",
+      "home": "South Africa",
+      "away": "Canada",
+      "homeGoals": 0,
+      "awayGoals": 1,
+      "status": "FT",
+      "winner": "Canada",
+      "advancesTo": "53452511"
+    },
+    {
+      "id": "53452557",
+      "date": "2026-06-29",
+      "timeAR": "14:00",
+      "round": "16avos",
+      "home": "Brazil",
+      "away": "Japan",
+      "status": "SCHEDULED",
+      "advancesTo": "53452517"
+    },
+    {
+      "id": "53452541",
+      "date": "2026-06-29",
+      "timeAR": "17:30",
+      "round": "16avos",
+      "home": "Germany",
+      "away": "Paraguay",
+      "status": "SCHEDULED",
+      "advancesTo": "53452509"
+    },
+    {
+      "id": "53452547",
+      "date": "2026-06-29",
+      "timeAR": "22:00",
+      "round": "16avos",
+      "home": "Netherlands",
+      "away": "Morocco",
+      "status": "SCHEDULED",
+      "advancesTo": "53452511"
+    },
+    {
+      "id": "53452561",
+      "date": "2026-06-30",
+      "timeAR": "14:00",
+      "round": "16avos",
+      "home": "Ivory Coast",
+      "away": "Norway",
+      "status": "SCHEDULED",
+      "advancesTo": "53452517"
+    },
+    {
+      "id": "53452543",
+      "date": "2026-06-30",
+      "timeAR": "18:00",
+      "round": "16avos",
+      "home": "France",
+      "away": "Sweden",
+      "status": "SCHEDULED",
+      "advancesTo": "53452509"
+    },
+    {
+      "id": "53452563",
+      "date": "2026-06-30",
+      "timeAR": "22:00",
+      "round": "16avos",
+      "home": "Mexico",
+      "away": "Ecuador",
+      "status": "SCHEDULED",
+      "advancesTo": "53452519"
+    },
+    {
+      "id": "53452565",
+      "date": "2026-07-01",
+      "timeAR": "13:00",
+      "round": "16avos",
+      "home": "England",
+      "away": "DR Congo",
+      "status": "SCHEDULED",
+      "advancesTo": "53452519"
+    },
+    {
+      "id": "53452555",
+      "date": "2026-07-01",
+      "timeAR": "17:00",
+      "round": "16avos",
+      "home": "Belgium",
+      "away": "Senegal",
+      "status": "SCHEDULED",
+      "advancesTo": "53452515"
+    },
+    {
+      "id": "53452553",
+      "date": "2026-07-01",
+      "timeAR": "21:00",
+      "round": "16avos",
+      "home": "USA",
+      "away": "Bosnia and Herzegovina",
+      "status": "SCHEDULED",
+      "advancesTo": "53452515"
+    },
+    {
+      "id": "53452551",
+      "date": "2026-07-02",
+      "timeAR": "16:00",
+      "round": "16avos",
+      "home": "Spain",
+      "away": "Austria",
+      "status": "SCHEDULED",
+      "advancesTo": "53452513"
+    },
+    {
+      "id": "53452549",
+      "date": "2026-07-02",
+      "timeAR": "20:00",
+      "round": "16avos",
+      "home": "Portugal",
+      "away": "Croatia",
+      "status": "SCHEDULED",
+      "advancesTo": "53452513"
+    },
+    {
+      "id": "53452505",
+      "date": "2026-07-03",
+      "timeAR": "00:00",
+      "round": "16avos",
+      "home": "Switzerland",
+      "away": "Algeria",
+      "status": "SCHEDULED",
+      "advancesTo": "53452523"
+    },
+    {
+      "id": "53452503",
+      "date": "2026-07-03",
+      "timeAR": "15:00",
+      "round": "16avos",
+      "home": "Australia",
+      "away": "Egypt",
+      "status": "SCHEDULED",
+      "advancesTo": "53452521"
+    },
+    {
+      "id": "53452569",
+      "date": "2026-07-03",
+      "timeAR": "19:00",
+      "round": "16avos",
+      "home": "Argentina",
+      "away": "Cabo Verde",
+      "status": "SCHEDULED",
+      "advancesTo": "53452521"
+    },
+    {
+      "id": "53452507",
+      "date": "2026-07-03",
+      "timeAR": "22:30",
+      "round": "16avos",
+      "home": "Colombia",
+      "away": "Ghana",
+      "status": "SCHEDULED",
+      "advancesTo": "53452523"
+    }
+  ]
+}
