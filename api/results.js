@@ -1,1 +1,2 @@
+export default async function handler(req,res){try{const host=req.headers.host;const proto=req.headers['x-forwarded-proto']||'https';const r=await fetch(`${proto}://${host}/resultados.json`);const data=await r.json();res.setHeader('Cache-Control','s-maxage=60, stale-while-revalidate=300');return res.status(200).json(data);}catch(e){return res.status(500).json({error:'No se pudo cargar resultados.json',message:e.message});}}
 
